@@ -1,0 +1,96 @@
+[package]
+name = "poiskovichek"
+version = "0.2.1"
+edition = "2024"
+
+[lib]
+name = "poiskovichek"
+path = "src/lib.rs"
+
+[[bin]]
+name = "Poiskovichek"
+path = "src/main.rs"
+
+[dependencies]
+crc32fast = "1.5"
+crossbeam-channel = "0.5"
+dirs = "6.0"
+ed25519-dalek = "2"
+encoding_rs = "0.8"
+fst = "0.4"
+hex = "0.4"
+lopdf = { version = "0.42", default-features = false }
+memmap2 = "0.9"
+pdf-extract = "0.12"
+rayon = "1.12"
+roxmltree = "0.21"
+rusqlite = { version = "0.37", features = ["bundled", "backup"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.10"
+tantivy = "0.27"
+tantivy-tokenizer-api = "0.7"
+thiserror = "2.0"
+toml = "1.1"
+ureq = { version = "3", features = ["rustls"] }
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_System_Registry",
+    "Win32_System_Com",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Shell",
+    "Win32_UI_Shell_Common",
+    "Win32_System_SystemInformation",
+    "Win32_Storage_FileSystem",
+    "Win32_System_JobObjects",
+    "Win32_System_Threading",
+    "Win32_System_Console",
+    "Win32_Security",
+    "Win32_System_Diagnostics_Debug",
+    "Win32_System_WindowsProgramming",
+    "Win32_System_Ioctl",
+    "Win32_System_IO",
+] }
+zip = { version = "2.6", default-features = false, features = ["deflate"] }
+zstd = "0.14"
+egui = "0.37"
+eframe = { version = "0.37", features = ["wgpu", "glow"] }
+image = { version = "0.25", default-features = false, features = ["png", "ico"] }
+
+[build-dependencies]
+winresource = "0.1"
+
+[[bin]]
+name = "build_morph"
+path = "src/bin/build_morph.rs"
+
+[[bin]]
+name = "zamer_diskov"
+path = "src/bin/zamer_diskov.rs"
+
+[[bin]]
+name = "zamer_indeksa"
+path = "src/bin/zamer_indeksa.rs"
+
+[dev-dependencies]
+tempfile = "3.27"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.zamery]
+inherits = "release"
+lto = false
+codegen-units = 16
+incremental = true
+
+[profile.dev]
+opt-level = 1
+debug = false
+
+[profile.dev.package."*"]
+opt-level = 3
+debug = false

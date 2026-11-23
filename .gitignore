@@ -1,0 +1,42 @@
+# Сборочные артефакты и временные файлы
+target/
+dist/
+*.exe
+*.pdb
+*.log
+*.tmp
+/proba/
+
+# Базы данных и файлы блокировок
+*.sqlite3
+*.sqlite3-*
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+
+# Секреты, ключи, сертификаты и переменные окружения
+.env*
+*.env
+*.pem
+*.der
+*.ppk
+*.key
+*.crt
+*.cer
+*.pfx
+*.p12
+id_rsa
+id_ed25519
+
+# Кэши и файлы интерпретаторов
+__pycache__/
+*.py[cod]
+.cache/
+
+# Локальные настройки и приватные файлы
+tools/lokalno.ps1
+/docs/razbor/
+/docs/TZ.md
+src/schetchiki.zip
+docs/opyty.xlsx

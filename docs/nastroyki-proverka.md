@@ -1,0 +1,41 @@
+# Проверка применения настроек (Раздел 5 ТЗ)
+
+В данном документе приведен полный перечень настроек программы «ПоисКовичеК» (согласно разделу 5 ТЗ) и соответствующие тесты принципа **«изменил настройку → поведение изменилось»**, размещённые в тестовом наборе `tests/vse/settings_effects.rs`.
+
+| Вкладка | Настройка | Умолчание | Тест (`tests/vse/settings_effects.rs`) | Проверяемое изменение поведения |
+|---|---|---|---|---|
+| **Источники** | `mode`: режим источника (`NamesOnly`) | `Full` | `test_setting_source_mode_names_only` | При `NamesOnly` текст не извлекается и не попадает в Tantivy (поиск по содержимому отдаёт 0), но имя находится (отдаёт 1). При `Full` текст индексируется и находится. |
+| **Источники** | `mode`: режим источника (`DocumentsOnly`) | `Full` | `test_setting_source_mode_documents_only` | При `DocumentsOnly` файлы кода (`.rs`) отсекаются при обходе, а документы (`.txt`, `.docx`) остаются. |
+| **Источники** | `max_depth`: предельная глубина вложенности | 0 (без предела) | `test_setting_source_max_depth` | При `max_depth = 1` глубокие файлы (`l1/l2/l3/deep_file.txt`) пропускаются; при `max_depth = 0` включаются. |
+| **Источники** | `enabled`: включение/выключение источника | `true` | `test_setting_source_enabled` | При `enabled = false` источник не сканируется и файлы не попадают в базу (added = 0); при `enabled = true` индексируются (added = 1). |
+| **Исключения** | `exclude_folder_names`: шаблоны имён папок | `.git .svn ... node_modules ...` | `test_setting_exclude_folder_names` | При наличии `node_modules` в списке папка пропускается; после удаления из списка обходится и индексируется. |
+| **Исключения** | `documents_only_folder_names`: папки «только документы» | `tmp cache` | `test_setting_documents_only_folder_names` | В папке `cache` скрипт `.py` отсекается; после удаления `cache` из списка скрипт индексируется. |
+| **Исключения** | `exclude_paths`: системные и пользовательские пути | `%WINDIR%`, `Program Files`, ... | `test_setting_exclude_paths` | Добавление пути в `exclude_paths` исключает его из обхода; после очистки путь обходится. |
+| **Исключения** | `exclude_files`: шаблоны файлов | `hiberfil.sys ... *.tmp` | `test_setting_exclude_files` | Файлы по маске `*.tmp` исключаются из обхода, обычные файлы остаются. |
+| **Форматы и пределы** | `extract_text_formats`: извлекать текст из txt/md/... | `true` | `test_setting_extract_text_formats` | При `false` файл `.txt` получает статус `metadata-only` без извлечения текста; при `true` текст извлекается. |
+| **Форматы и пределы** | `extract_office_formats`: извлекать текст из docx/xlsx/... | `true` | `test_setting_extract_office_formats` | При `false` файлы `.docx` получают статус `metadata-only` без извлечения текста. |
+| **Форматы и пределы** | `extract_book_formats`: извлекать текст из fb2/epub/html | `true` | `test_setting_extract_book_formats` | При `false` `.html` получает статус `metadata-only`; при `true` текст извлекается. |
+| **Форматы и пределы** | `extract_pdf_format`: извлекать текст из PDF | `true` | `test_setting_extract_pdf_format` | При `false` файл `.pdf` получает статус `metadata-only` без извлечения текста. |
+| **Форматы и пределы** | `limit_chars_books_documents`: предел символов книг/документов | 20 000 000 | `test_setting_limit_chars_books_documents` | Установка предела в 10 символов обрезает извлечённый текст книги/документа ровно до 10 символов. |
+| **Форматы и пределы** | `limit_chars_code_service`: предел символов кода/служебных | 200 000 | `test_setting_limit_chars_code_service` | Установка предела в 15 символов обрезает извлечённый текст кода/json ровно до 15 символов. |
+| **Форматы и пределы** | `limit_chars_other`: предел символов прочих форматов | 100 000 | `test_setting_limit_chars_other` | Конфигурация предела символов для неизвестных/прочих форматов меняется в `ExtractConfig`. |
+| **Форматы и пределы** | `limit_chars_large_txt`: предел символов большого txt | 200 000 | `test_setting_limit_chars_large_txt` | Для файла с размером выше порога текст обрезается до `limit_chars_large_txt`. |
+| **Форматы и пределы** | `large_txt_threshold_mb`: порог большого txt/md (МБ) | 5 | `test_setting_large_txt_threshold_mb` | При снижении порога с 10 до 2 МБ файл размером 5 МБ переходит на использование `limit_chars_large_txt`. |
+| **Форматы и пределы** | `zip_scan`: заходить в ZIP-архивы | `true` | `test_setting_zip_scan` | При `zip_scan = false` файлы внутри ZIP не сканируются; при `true` файлы внутри архива извлекаются. |
+| **Форматы и пределы** | `zip_max_file_size_mb`: предел внутреннего файла ZIP | 20 | `test_setting_zip_max_file_size_mb` | Файл внутри ZIP размером 2 МБ при лимите 1 МБ пропускается с фиксацией пропуска `внутренний файл больше 1 МБ`. |
+| **Форматы и пределы** | `pdf_extractor`: способ извлечения PDF (Builtin / External) | `Builtin` | `test_setting_pdf_extractor` | Выбор `External` с недействительным путём к `pdftotext` отклоняется валидацией; при `Builtin` валидация успешна. |
+| **Форматы и пределы** | `extract_timeout_seconds`: предел времени извлечения файла | 120 | `test_setting_extract_timeout_seconds` | Значение 0 отклоняется валидацией настроек; положительное значение настраивает таймаут пула воркеров. |
+| **Закрытые данные** | `secret_extra_patterns`: доп. шаблоны закрытых данных | `[]` | `test_setting_secret_extra_patterns` | Добавление шаблона `budget` помечает файл с этим словом как чувствительный (`sensitive-metadata-only`). |
+| **Поиск** | `enable_morphology`: использование словоформ | `true` | `test_setting_enable_morphology` | При `true` запрос «спешившую» находит документ с «спешившая»; при `false` поиск отдаёт 0 результатов. Действует сразу со следующего запроса без перезапуска движка (`engine.update_settings()`). |
+| **Поиск** | `multi_word_mode`: строгая фраза / все слова | `StrictPhrase` | `test_setting_multi_word_mode` | В режиме `StrictPhrase` разнесённые слова не находятся; в режиме `AllWords` документ находится. |
+| **Поиск** | `max_results`: макс. число результатов (1–500) | 200 | `test_setting_max_results` | При `max_results = 1` выдача ограничивается ровно 1 результатом, хотя найдено 5 документов. |
+| **Поиск** | `fragment_before` / `fragment_after`: длина фрагмента | 140 / 300 | `test_setting_fragment_length` | Уменьшение параметров до 10 / 15 сокращает длину возвращаемого фрагмента с подсветкой. |
+| **Поиск** | `default_sort`: сортировка по умолчанию | `Relevance` | `test_setting_default_sort` | При `SortMode::SizeDesc` первым выдаётся крупный файл; при `SortMode::NameAsc` — первый по алфавиту. |
+| **Поиск** | `book_folder_words`: слова книжных папок | `books ebooks ...` | `test_setting_book_folder_words` | Добавление слова `rare_novels` относит файлы из такой папки к категории «Книги». |
+| **Обновление** | `update_on_startup`: сверка при запуске | `true` | `test_setting_update_on_startup` | Управляет автоматическим вызовом фоновой сверки при открытии программы. |
+| **Обновление** | `update_interval_minutes`: интервал автообновления | 60 | `test_setting_update_interval_minutes` | Значения валидируются (0..=1440); при смене интервала таймер перезапускается. |
+| **Обновление** | `autostart`: запуск при входе в Windows | `false` | `test_setting_autostart` | В тестовом изолированном разделе реестра `HKCU\Software\ПоисКовичеК-тест-настройки\Run` корректно прописывается ключ с аргументом `--background` и удаляется при выключении. |
+| **Данные и производительность** | `data_dir`: путь к папке данных | `%LOCALAPPDATA%\ПоисКовичеК` | `test_setting_data_dir` | Функция переноса `relocate_data(..., Move)` перемещает базу и индекс в новую папку, где они успешно открываются и сохраняют целостность. |
+| **Данные и производительность** | `worker_threads`: число рабочих процессов | 0 (авто) | `test_setting_worker_threads` | Валидируется ограничение (0..=64); заданное число передаётся в пул параллельных рабочих процессов. |
+| **Данные и производительность** | `hdd_gentle_mode`: щадящий режим для HDD | `false` | `test_setting_hdd_gentle_mode` | При `hdd_gentle_mode = true` обход источника принудительно ограничивается ровно 1 потоком на том. |
+| **Данные и производительность** | `log_keep_days`: срок хранения журнала (дней) | 14 | `test_setting_log_keep_days` | Функция `clean_old_logs(..., 14)` удаляет логи старше 14 дней и сохраняет свежие логи. |

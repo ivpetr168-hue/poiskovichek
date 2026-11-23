@@ -1,0 +1,4 @@
+арктический лед	1	dokument.txt
+весенняя обрезка	1	statya.html
+spravka	1	spravka.pdf
+ветряной мельницы	1	vnutri.txt

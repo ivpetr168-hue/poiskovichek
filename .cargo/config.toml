@@ -1,0 +1,11 @@
+# R1-№122: быстрый компоновщик rust-lld (входит в набор инструментов Rust, ставить ничего не надо)
+# вместо link.exe из MSVC. Только для цели x86_64-pc-windows-msvc.
+# rustc вызывает его как `rust-lld -flavor link` (режим link.exe) и сам находит его в папке
+# rustlib набора инструментов; библиотеки MSVC/Windows SDK берутся тем же способом, что и для link.exe.
+# Проверка, что он действительно используется:
+#   cargo rustc --bin Poiskovichek -- --print link-args   (первое слово — "rust-lld", а не ...\link.exe)
+# Вернуть прежний компоновщик: удалить этот файл (или строку linker).
+# Замечание: Cargo не умеет задавать компоновщик по профилю, поэтому настройка действует на все
+# профили, включая release и установщик (--config target.x86_64-pc-windows-msvc.linker=... переопределяет).
+[target.x86_64-pc-windows-msvc]
+linker = "rust-lld"

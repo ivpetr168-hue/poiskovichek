@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0">
+  <description>
+    <title-info>
+      <genre>science</genre>
+      <author><first-name>Иван</first-name><last-name>Летописец</last-name></author>
+      <book-title>Хроники северных морей</book-title>
+    </title-info>
+  </description>
+  <body>
+    <section>
+      <title><p>Глава 1</p></title>
+      <p>Старинная монастырская летопись повествует о древних походах новгородских купцов через Белое море.</p>
+    </section>
+  </body>
+</FictionBook>
