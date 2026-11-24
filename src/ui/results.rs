@@ -1,7 +1,9 @@
 use crate::search::SearchItem;
 use crate::snippet::Snippet;
 use crate::ui::dialogs::{open_file_externally, show_in_folder};
-use crate::ui::theme::{ACCENT_COLOR, BG_COLOR, CARD_BG, CARD_BORDER, SUBDUED_COLOR, TEXT_COLOR};
+use crate::ui::theme::{
+    accent_color, card_bg, card_border, match_bg, match_fg, subdued_color, text_color,
+};
 
 /// Форматирует размер файла в человекочитаемом виде (МБ, КБ, Б)
 pub fn format_size(bytes: u64) -> String {
@@ -70,8 +72,8 @@ fn render_card(
     confirm_remove_path: &mut Option<String>,
 ) {
     egui::Frame::canvas(ui.style())
-        .fill(CARD_BG)
-        .stroke(egui::Stroke::new(1.0, CARD_BORDER))
+        .fill(card_bg())
+        .stroke(egui::Stroke::new(1.0, card_border()))
         .corner_radius(egui::CornerRadius::same(4))
         .inner_margin(egui::Margin::same(10))
         .show(ui, |ui| {
@@ -80,11 +82,11 @@ fn render_card(
             // 1. Имя файла крупно и акцентом
             ui.horizontal(|ui| {
                 ui.colored_label(
-                    ACCENT_COLOR,
+                    accent_color(),
                     egui::RichText::new(&item.name).size(16.0).strong(),
                 );
                 if item.is_duplicate {
-                    ui.colored_label(SUBDUED_COLOR, egui::RichText::new("[дубликат]").size(12.0));
+                    ui.colored_label(subdued_color(), egui::RichText::new("[дубликат]").size(12.0));
                 }
             });
 
@@ -108,7 +110,7 @@ fn render_card(
                 details.push_str(st);
             }
 
-            ui.colored_label(SUBDUED_COLOR, egui::RichText::new(details).size(12.0));
+            ui.colored_label(subdued_color(), egui::RichText::new(details).size(12.0));
             ui.add_space(4.0);
 
             // 3. Фрагмент с подсветкой
@@ -119,20 +121,20 @@ fn render_card(
                         for (seg, is_match) in &snip.segments {
                             if *is_match {
                                 ui.colored_label(
-                                    BG_COLOR,
+                                    match_fg(),
                                     egui::RichText::new(seg)
-                                        .background_color(ACCENT_COLOR)
+                                        .background_color(match_bg())
                                         .size(13.0),
                                 );
                             } else {
-                                ui.colored_label(TEXT_COLOR, egui::RichText::new(seg).size(13.0));
+                                ui.colored_label(text_color(), egui::RichText::new(seg).size(13.0));
                             }
                         }
                     });
                 }
                 Some(SnippetState::Pending) => {
                     ui.colored_label(
-                        SUBDUED_COLOR,
+                        subdued_color(),
                         egui::RichText::new("Фрагмент загружается…")
                             .size(12.0)
                             .italics(),
@@ -151,7 +153,7 @@ fn render_card(
                     .add(
                         egui::Label::new(
                             egui::RichText::new(path)
-                                .color(TEXT_COLOR)
+                                .color(text_color())
                                 .size(12.0)
                                 .underline(),
                         )

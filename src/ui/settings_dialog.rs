@@ -3,12 +3,12 @@ use std::path::PathBuf;
 use crate::autostart;
 use crate::relocate::RelocateMode;
 use crate::settings::{
-    MultiWordMode, PdfExtractorMode, Settings, Source, SourceMode, WordFormsMode,
+    MultiWordMode, PdfExtractorMode, Settings, Source, SourceMode, Theme, WordFormsMode,
 };
 use crate::ui::dialogs::pick_folder;
 use crate::ui::theme::{
-    ACCENT_COLOR, BG_COLOR, ERROR_COLOR, SUBDUED_COLOR, TEXT_COLOR, WARNING_COLOR,
-    selectable_choice, theme_title_frame,
+    accent_color, error_color, palette, selectable_choice, subdued_color, text_color,
+    theme_title_frame, warning_color,
 };
 use crate::ui::{SORT_MODES, sort_mode_title, source_mode_title};
 
@@ -22,6 +22,7 @@ pub enum SettingsTab {
     Search,
     Update,
     DataAndPerformance,
+    Interface,
 }
 
 impl SettingsTab {
@@ -34,6 +35,7 @@ impl SettingsTab {
             Self::Search => "Поиск",
             Self::Update => "Обновление",
             Self::DataAndPerformance => "Данные и производительность",
+            Self::Interface => "Интерфейс",
         }
     }
 }
@@ -134,6 +136,7 @@ impl SettingsDialogState {
                         SettingsTab::Search,
                         SettingsTab::Update,
                         SettingsTab::DataAndPerformance,
+                        SettingsTab::Interface,
                     ];
                     for tab in tabs {
                         let selected = self.active_tab == tab;
@@ -141,9 +144,9 @@ impl SettingsDialogState {
                             .selectable_label(
                                 selected,
                                 egui::RichText::new(tab.title()).color(if selected {
-                                    BG_COLOR
+                                    palette().selection_text
                                 } else {
-                                    TEXT_COLOR
+                                    text_color()
                                 }),
                             )
                             .clicked()
@@ -166,6 +169,7 @@ impl SettingsDialogState {
                         SettingsTab::Search => self.render_search_tab(ui),
                         SettingsTab::Update => self.render_update_tab(ui),
                         SettingsTab::DataAndPerformance => self.render_data_tab(ui),
+                        SettingsTab::Interface => self.render_interface_tab(ui),
                     });
 
                 ui.separator();
@@ -187,11 +191,11 @@ impl SettingsDialogState {
     // ========================================================================
     fn render_sources_tab(&mut self, ui: &mut egui::Ui) {
         ui.colored_label(
-            ACCENT_COLOR,
+            accent_color(),
             egui::RichText::new("Источники поиска").size(15.0).strong(),
         );
         ui.colored_label(
-            SUBDUED_COLOR,
+            subdued_color(),
             "Диски и папки, по которым производится поиск, с индивидуальными режимами обхода.",
         );
         ui.add_space(4.0);
@@ -205,11 +209,11 @@ impl SettingsDialogState {
                 .striped(true)
                 .spacing([12.0, 6.0])
                 .show(ui, |ui| {
-                    ui.colored_label(TEXT_COLOR, "Вкл");
-                    ui.colored_label(TEXT_COLOR, "Путь");
-                    ui.colored_label(TEXT_COLOR, "Режим обхода");
-                    ui.colored_label(TEXT_COLOR, "Глубина (0 — вся)");
-                    ui.colored_label(TEXT_COLOR, "Действие");
+                    ui.colored_label(text_color(), "Вкл");
+                    ui.colored_label(text_color(), "Путь");
+                    ui.colored_label(text_color(), "Режим обхода");
+                    ui.colored_label(text_color(), "Глубина (0 — вся)");
+                    ui.colored_label(text_color(), "Действие");
                     ui.end_row();
 
                     for (idx, source) in self.draft.sources.iter_mut().enumerate() {
@@ -287,10 +291,10 @@ impl SettingsDialogState {
                     .title_frame(theme_title_frame())
                     .show(ui.ctx(), |ui| {
                         ui.colored_label(
-                            WARNING_COLOR,
+                            warning_color(),
                             "Записи удалятся из поиска, файлы на диске останутся. Удалить этот источник?",
                         );
-                        ui.colored_label(SUBDUED_COLOR, src_path);
+                        ui.colored_label(subdued_color(), src_path);
                         ui.separator();
                         ui.horizontal(|ui| {
                             if ui.button("Удалить источник").clicked() {
@@ -313,24 +317,24 @@ impl SettingsDialogState {
     // ========================================================================
     fn render_exceptions_tab(&mut self, ui: &mut egui::Ui) {
         ui.colored_label(
-            ACCENT_COLOR,
+            accent_color(),
             egui::RichText::new("Настройка исключений")
                 .size(15.0)
                 .strong(),
         );
         ui.colored_label(
-            SUBDUED_COLOR,
+            subdued_color(),
             "Исключения позволяют ускорить индексацию и избежать засорения поиска служебными файлами.",
         );
         ui.add_space(6.0);
 
         // Список 1: Имена папок
         ui.colored_label(
-            TEXT_COLOR,
+            text_color(),
             "1. Имена папок, исключаемые из обхода (шаблоны):",
         );
         ui.colored_label(
-            SUBDUED_COLOR,
+            subdued_color(),
             "Папки с этими именами полностью пропускаются при обходе (.git, node_modules, target и др.).",
         );
         render_string_list(
@@ -343,9 +347,9 @@ impl SettingsDialogState {
         ui.separator();
 
         // Список 2: Папки «только документы»
-        ui.colored_label(TEXT_COLOR, "2. Папки «только документы» по имени:");
+        ui.colored_label(text_color(), "2. Папки «только документы» по имени:");
         ui.colored_label(
-            SUBDUED_COLOR,
+            subdued_color(),
             "В таких папках индексируются исключительно документы, без бинарных и временных файлов.",
         );
         render_string_list(
@@ -358,9 +362,9 @@ impl SettingsDialogState {
         ui.separator();
 
         // Список 3: Пути
-        ui.colored_label(TEXT_COLOR, "3. Системные и служебные пути:");
+        ui.colored_label(text_color(), "3. Системные и служебные пути:");
         ui.colored_label(
-            SUBDUED_COLOR,
+            subdued_color(),
             "Системные папки Windows и стандартные каталоги, исключаемые из обхода на всех томах.",
         );
         render_string_list(
@@ -373,9 +377,9 @@ impl SettingsDialogState {
         ui.separator();
 
         // Список 4: Файлы
-        ui.colored_label(TEXT_COLOR, "4. Шаблоны исключаемых файлов:");
+        ui.colored_label(text_color(), "4. Шаблоны исключаемых файлов:");
         ui.colored_label(
-            SUBDUED_COLOR,
+            subdued_color(),
             "Системные файлы и блокировки, пропускаемые при обходе (pagefile.sys, ~$* и др.).",
         );
         render_string_list(
@@ -392,24 +396,24 @@ impl SettingsDialogState {
     // ========================================================================
     fn render_formats_tab(&mut self, ui: &mut egui::Ui) {
         ui.colored_label(
-            ACCENT_COLOR,
+            accent_color(),
             egui::RichText::new("Форматы и пределы извлечения")
                 .size(15.0)
                 .strong(),
         );
         ui.colored_label(
-            SUBDUED_COLOR,
+            subdued_color(),
             "Управление извлечением текста по группам форматов и ограничениями на объём и время.",
         );
         ui.add_space(6.0);
 
-        ui.colored_label(TEXT_COLOR, "Извлекать текст по группам форматов:");
+        ui.colored_label(text_color(), "Извлекать текст по группам форматов:");
         ui.checkbox(
             &mut self.draft.extract_text_formats,
             "Текстовые форматы (txt, md, csv, json, xml, yaml, ini, log, исходный код)",
         );
         ui.colored_label(
-            SUBDUED_COLOR,
+            subdued_color(),
             "Обычные текстовые файлы и исходный код с автоопределением кодировки.",
         );
 
@@ -418,7 +422,7 @@ impl SettingsDialogState {
             "Офисные документы (docx, xlsx, pptx, odt, ods, odp)",
         );
         ui.colored_label(
-            SUBDUED_COLOR,
+            subdued_color(),
             "Документы Microsoft Office и OpenDocument с извлечением текста и таблиц.",
         );
 
@@ -427,18 +431,18 @@ impl SettingsDialogState {
             "Книги и разметка (html, htm, rtf, fb2, epub)",
         );
         ui.colored_label(
-            SUBDUED_COLOR,
+            subdued_color(),
             "Электронные книги по порядку глав и форматированный текст.",
         );
 
         ui.checkbox(&mut self.draft.extract_pdf_format, "Файлы PDF");
         ui.colored_label(
-            SUBDUED_COLOR,
+            subdued_color(),
             "Извлечение текстового слоя из документов в формате PDF.",
         );
 
         ui.separator();
-        ui.colored_label(TEXT_COLOR, "Пределы извлекаемых символов:");
+        ui.colored_label(text_color(), "Пределы извлекаемых символов:");
 
         ui.horizontal(|ui| {
             ui.label("Книги и документы:");
@@ -449,7 +453,7 @@ impl SettingsDialogState {
             );
         });
         ui.colored_label(
-            SUBDUED_COLOR,
+            subdued_color(),
             "Максимальное количество символов из книг и офисных документов (умолчание: 20 000 000).",
         );
 
@@ -462,7 +466,7 @@ impl SettingsDialogState {
             );
         });
         ui.colored_label(
-            SUBDUED_COLOR,
+            subdued_color(),
             "Предел символов для файлов исходного кода, конфигураций и логов (умолчание: 200 000).",
         );
 
@@ -475,7 +479,7 @@ impl SettingsDialogState {
             );
         });
         ui.colored_label(
-            SUBDUED_COLOR,
+            subdued_color(),
             "Предел символов для всех остальных текстовых форматов (умолчание: 100 000).",
         );
 
@@ -488,7 +492,7 @@ impl SettingsDialogState {
             );
         });
         ui.colored_label(
-            SUBDUED_COLOR,
+            subdued_color(),
             "Предел символов для текстовых файлов, превысивших порог размера (умолчание: 200 000).",
         );
 
@@ -497,18 +501,18 @@ impl SettingsDialogState {
             ui.add(egui::DragValue::new(&mut self.draft.large_txt_threshold_mb).range(1..=100));
         });
         ui.colored_label(
-            SUBDUED_COLOR,
+            subdued_color(),
             "Размер файла в мегабайтах, начиная с которого txt/md считается большим (умолчание: 5 МБ).",
         );
 
         ui.separator();
-        ui.colored_label(TEXT_COLOR, "Архивы ZIP:");
+        ui.colored_label(text_color(), "Архивы ZIP:");
         ui.checkbox(
             &mut self.draft.zip_scan,
             "Заходить внутрь ZIP-архивов для индексирования",
         );
         ui.colored_label(
-            SUBDUED_COLOR,
+            subdued_color(),
             "Индексация вложенных файлов архивов с указанием пути через разделитель « → ».",
         );
 
@@ -517,12 +521,12 @@ impl SettingsDialogState {
             ui.add(egui::DragValue::new(&mut self.draft.zip_max_file_size_mb).range(1..=500));
         });
         ui.colored_label(
-            SUBDUED_COLOR,
+            subdued_color(),
             "Файлы внутри архива больше этого предела пропускаются со статусом (умолчание: 20 МБ).",
         );
 
         ui.separator();
-        ui.colored_label(TEXT_COLOR, "Извлекатель PDF:");
+        ui.colored_label(text_color(), "Извлекатель PDF:");
         ui.horizontal(|ui| {
             ui.radio_value(
                 &mut self.draft.pdf_extractor,
@@ -536,7 +540,7 @@ impl SettingsDialogState {
             );
         });
         ui.colored_label(
-            SUBDUED_COLOR,
+            subdued_color(),
             "Встроенный извлекатель на Rust не требует внешних программ; внешний использует pdftotext.",
         );
 
@@ -549,7 +553,7 @@ impl SettingsDialogState {
                 }
             });
             ui.colored_label(
-                SUBDUED_COLOR,
+                subdued_color(),
                 "Укажите полный путь к исполняемому файлу pdftotext.exe из пакета Poppler.",
             );
         }
@@ -560,7 +564,7 @@ impl SettingsDialogState {
             ui.add(egui::DragValue::new(&mut self.draft.extract_timeout_seconds).range(5..=600));
         });
         ui.colored_label(
-            SUBDUED_COLOR,
+            subdued_color(),
             "Защита от зависания рабочего процесса на повреждённых документах (умолчание: 120 с).",
         );
     }
@@ -570,23 +574,23 @@ impl SettingsDialogState {
     // ========================================================================
     fn render_sensitive_data_tab(&mut self, ui: &mut egui::Ui) {
         ui.colored_label(
-            ACCENT_COLOR,
+            accent_color(),
             egui::RichText::new("Закрытые и конфиденциальные данные")
                 .size(15.0)
                 .strong(),
         );
         ui.colored_label(
-            SUBDUED_COLOR,
+            subdued_color(),
             "Файлы, подпадающие под правила закрытых данных, никогда не читаются для защиты тайн и паролей.",
         );
         ui.add_space(6.0);
 
         ui.colored_label(
-            TEXT_COLOR,
+            text_color(),
             "Встроенные правила безопасности (не выключаются):",
         );
         ui.colored_label(
-            SUBDUED_COLOR,
+            subdued_color(),
             "Эти шаблоны встроены в ядро программы и гарантируют сохранность личных данных:",
         );
 
@@ -605,13 +609,13 @@ impl SettingsDialogState {
         ];
         ui.add_space(4.0);
         for rule in builtin_rules {
-            ui.colored_label(SUBDUED_COLOR, format!("• {rule}"));
+            ui.colored_label(subdued_color(), format!("• {rule}"));
         }
 
         ui.separator();
-        ui.colored_label(TEXT_COLOR, "Дополнительные пользовательские шаблоны:");
+        ui.colored_label(text_color(), "Дополнительные пользовательские шаблоны:");
         ui.colored_label(
-            SUBDUED_COLOR,
+            subdued_color(),
             "Добавьте свои имена или маски файлов, содержимое которых не должно индексироваться.",
         );
 
@@ -629,13 +633,13 @@ impl SettingsDialogState {
     // ========================================================================
     fn render_search_tab(&mut self, ui: &mut egui::Ui) {
         ui.colored_label(
-            ACCENT_COLOR,
+            accent_color(),
             egui::RichText::new("Параметры поиска и выдачи")
                 .size(15.0)
                 .strong(),
         );
         ui.colored_label(
-            SUBDUED_COLOR,
+            subdued_color(),
             "Настройка морфологии, режима многословных запросов и отображения фрагментов.",
         );
         ui.add_space(6.0);
@@ -645,12 +649,12 @@ impl SettingsDialogState {
             "Русские словоформы (морфологический словарь morph.fst)",
         );
         ui.colored_label(
-            SUBDUED_COLOR,
+            subdued_color(),
             "Позволяет находить слова во всех падежах, числах и склонениях (спешившую → спешившая).",
         );
 
         ui.separator();
-        ui.colored_label(TEXT_COLOR, "Режим сопоставления нескольких слов:");
+        ui.colored_label(text_color(), "Режим сопоставления нескольких слов:");
         ui.horizontal(|ui| {
             ui.radio_value(
                 &mut self.draft.multi_word_mode,
@@ -664,12 +668,12 @@ impl SettingsDialogState {
             );
         });
         ui.colored_label(
-            SUBDUED_COLOR,
+            subdued_color(),
             "«Строгая фраза» ищет слова строго подряд; «все слова» ищет в любом месте документа.",
         );
 
         ui.separator();
-        ui.colored_label(TEXT_COLOR, "Словоформы в запросе:");
+        ui.colored_label(text_color(), "Словоформы в запросе:");
         ui.horizontal(|ui| {
             ui.radio_value(
                 &mut self.draft.word_forms_mode,
@@ -683,7 +687,7 @@ impl SettingsDialogState {
             );
         });
         ui.colored_label(
-            SUBDUED_COLOR,
+            subdued_color(),
             "Тот же выбор есть в главном окне. «Точно как набрано»: «книга» не найдёт «книги».",
         );
 
@@ -693,7 +697,7 @@ impl SettingsDialogState {
             ui.add(egui::DragValue::new(&mut self.draft.max_results).range(1..=500));
         });
         ui.colored_label(
-            SUBDUED_COLOR,
+            subdued_color(),
             "Предельное количество групп результатов поиска на экране (умолчание: 200).",
         );
 
@@ -706,7 +710,7 @@ impl SettingsDialogState {
             ui.label("символов после.");
         });
         ui.colored_label(
-            SUBDUED_COLOR,
+            subdued_color(),
             "Длина окружающего контекста в карточке найденного документа (умолчание: 140 / 300).",
         );
 
@@ -722,14 +726,14 @@ impl SettingsDialogState {
                 });
         });
         ui.colored_label(
-            SUBDUED_COLOR,
+            subdued_color(),
             "Порядок ранжирования результатов при новом поисковом запросе.",
         );
 
         ui.separator();
-        ui.colored_label(TEXT_COLOR, "Слова «книжных» папок:");
+        ui.colored_label(text_color(), "Слова «книжных» папок:");
         ui.colored_label(
-            SUBDUED_COLOR,
+            subdued_color(),
             "Имена папок, указывающие на категорию «Книга» (books, ebooks, библиотека и др.).",
         );
         render_string_list(
@@ -746,13 +750,13 @@ impl SettingsDialogState {
     // ========================================================================
     fn render_update_tab(&mut self, ui: &mut egui::Ui) {
         ui.colored_label(
-            ACCENT_COLOR,
+            accent_color(),
             egui::RichText::new("Обновление и автозапуск")
                 .size(15.0)
                 .strong(),
         );
         ui.colored_label(
-            SUBDUED_COLOR,
+            subdued_color(),
             "Режимы фоновой сверки источников и автозапуска программы вместе с Windows.",
         );
         ui.add_space(6.0);
@@ -762,7 +766,7 @@ impl SettingsDialogState {
             "Искать изменения и обновлять поиск при запуске программы",
         );
         ui.colored_label(
-            SUBDUED_COLOR,
+            subdued_color(),
             "Автоматический запуск сверки изменённых и новых файлов при открытии программы.",
         );
 
@@ -772,7 +776,7 @@ impl SettingsDialogState {
             ui.add(egui::DragValue::new(&mut self.draft.update_interval_minutes).range(0..=1440));
         });
         ui.colored_label(
-            SUBDUED_COLOR,
+            subdued_color(),
             "Интервал фоновой разностной сверки в минутах (0 — отключить периодическое обновление).",
         );
 
@@ -782,7 +786,7 @@ impl SettingsDialogState {
             "Запускать при входе в Windows (в фоновом режиме)",
         );
         ui.colored_label(
-            SUBDUED_COLOR,
+            subdued_color(),
             "Добавляет команду запуска программы в реестр Windows (HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run).",
         );
     }
@@ -792,18 +796,18 @@ impl SettingsDialogState {
     // ========================================================================
     fn render_data_tab(&mut self, ui: &mut egui::Ui) {
         ui.colored_label(
-            ACCENT_COLOR,
+            accent_color(),
             egui::RichText::new("Данные и производительность")
                 .size(15.0)
                 .strong(),
         );
         ui.colored_label(
-            SUBDUED_COLOR,
+            subdued_color(),
             "Расположение папки данных, распределение ресурсов процессора и срок хранения журналов.",
         );
         ui.add_space(6.0);
 
-        ui.colored_label(TEXT_COLOR, "Папка данных программы:");
+        ui.colored_label(text_color(), "Папка данных программы:");
         ui.horizontal(|ui| {
             let path_display = if self.draft.data_dir.as_os_str().is_empty() {
                 "%LOCALAPPDATA%\\ПоисКовичеК (по умолчанию)".to_string()
@@ -820,14 +824,14 @@ impl SettingsDialogState {
             }
         });
         ui.colored_label(
-            SUBDUED_COLOR,
+            subdued_color(),
             "Каталог для базы SQLite, индекса tantivy и файлов журнала.",
         );
 
         if self.selected_new_data_dir.is_some() {
             ui.add_space(4.0);
             ui.colored_label(
-                WARNING_COLOR,
+                warning_color(),
                 "Выбрана новая папка данных. Выберите вариант переноса:",
             );
             ui.radio_value(
@@ -848,7 +852,7 @@ impl SettingsDialogState {
             ui.add(egui::DragValue::new(&mut self.draft.worker_threads).range(0..=64));
         });
         ui.colored_label(
-            SUBDUED_COLOR,
+            subdued_color(),
             "Количество параллельных фоновых процессов извлечения текста (0 — автовыбор).",
         );
 
@@ -858,7 +862,7 @@ impl SettingsDialogState {
             "Щадящий режим для жестких дисков (HDD)",
         );
         ui.colored_label(
-            SUBDUED_COLOR,
+            subdued_color(),
             "Ограничивает чтение не более чем одним потоком на физический том для снижения шума и износа.",
         );
 
@@ -868,8 +872,39 @@ impl SettingsDialogState {
             ui.add(egui::DragValue::new(&mut self.draft.log_keep_days).range(1..=365));
         });
         ui.colored_label(
-            SUBDUED_COLOR,
+            subdued_color(),
             "Срок автоматического хранения ежедневных файлов журнала работы программы (умолчание: 14 дней).",
+        );
+    }
+
+    // ========================================================================
+    // 8. Вкладка «Интерфейс»
+    // ========================================================================
+    fn render_interface_tab(&mut self, ui: &mut egui::Ui) {
+        ui.colored_label(
+            accent_color(),
+            egui::RichText::new("Интерфейс").size(15.0).strong(),
+        );
+        ui.colored_label(
+            subdued_color(),
+            "Выбор темы оформления и внешнего вида программы.",
+        );
+        ui.add_space(6.0);
+
+        ui.colored_label(text_color(), "Тема:");
+        ui.horizontal(|ui| {
+            ui.radio_value(&mut self.draft.theme, Theme::Dark, "Тёмная");
+            ui.radio_value(&mut self.draft.theme, Theme::Light, "Светлая");
+            ui.radio_value(&mut self.draft.theme, Theme::Blue, "Синяя");
+            ui.radio_value(&mut self.draft.theme, Theme::Brown, "Коричневая");
+        });
+        ui.add_space(4.0);
+        ui.colored_label(
+            subdued_color(),
+            "• «Тёмная» — существующее оформление и значение по умолчанию.\n\
+             • «Светлая» — полноценный светлый фон.\n\
+             • «Синяя» — тёмно-синяя основа.\n\
+             • «Коричневая» — тёплая коричневая основа.",
         );
     }
 
@@ -883,7 +918,7 @@ impl SettingsDialogState {
         if !is_valid {
             ui.vertical(|ui| {
                 for err in &self.validation_errors {
-                    ui.colored_label(ERROR_COLOR, format!("• {err}"));
+                    ui.colored_label(error_color(), format!("• {err}"));
                 }
             });
             ui.add_space(4.0);
@@ -934,7 +969,7 @@ impl SettingsDialogState {
                 .title_frame(theme_title_frame())
                 .show(ui.ctx(), |ui| {
                     ui.colored_label(
-                        WARNING_COLOR,
+                        warning_color(),
                         "Вернуть все настройки к значениям по умолчанию? Источники останутся без изменений.",
                     );
                     ui.separator();

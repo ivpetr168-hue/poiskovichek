@@ -11,7 +11,7 @@ use windows::Win32::UI::Shell::{
 use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 use windows::core::PCWSTR;
 
-use crate::ui::theme::{ACCENT_COLOR, SUBDUED_COLOR, TEXT_COLOR, WARNING_COLOR};
+use crate::ui::theme::{accent_color, subdued_color, text_color, warning_color};
 
 /// Открывает файл во внешней программе по умолчанию через Win32 `ShellExecuteW`.
 /// Если путь указывает на элемент внутри ZIP-архива (`...zip → member`),
@@ -136,20 +136,20 @@ pub fn show_about_dialog(ctx: &egui::Context, open: &mut bool) {
             ui.spacing_mut().item_spacing.y = 8.0;
 
             ui.colored_label(
-                ACCENT_COLOR,
+                accent_color(),
                 format!("ПоисКовичеК {}", env!("CARGO_PKG_VERSION")),
             );
             ui.label("Быстрый локальный поиск по именам, путям и содержимому документов.");
             ui.separator();
 
-            ui.colored_label(TEXT_COLOR, "Лицензия: MIT");
+            ui.colored_label(text_color(), "Лицензия: MIT");
             ui.colored_label(
-                SUBDUED_COLOR,
+                subdued_color(),
                 "Морфологический словарь: OpenCorpora / pymorphy3 (лицензия MIT)",
             );
 
             ui.separator();
-            ui.colored_label(TEXT_COLOR, "Используемые библиотеки:");
+            ui.colored_label(text_color(), "Используемые библиотеки:");
             ui.label("• tantivy (Apache-2.0) — полнотекстовый индекс");
             ui.label("• rusqlite (MIT) — база метаданных SQLite");
             ui.label("• eframe / egui (MIT / Apache-2.0) — графический интерфейс");
@@ -191,7 +191,7 @@ pub fn show_confirm_reindex_dialog(
         .show(ctx, |ui| {
             ui.spacing_mut().item_spacing.y = 12.0;
             ui.colored_label(
-                WARNING_COLOR,
+                warning_color(),
                 "Перестроить поиск из сохранённых текстов? Исходные файлы читаться не будут.",
             );
             ui.separator();
@@ -232,10 +232,10 @@ pub fn show_confirm_remove_record_dialog(
         .show(ctx, |ui| {
             ui.spacing_mut().item_spacing.y = 10.0;
             ui.colored_label(
-                WARNING_COLOR,
+                warning_color(),
                 "Убрать эту запись из поиска? Файл на диске останется.",
             );
-            ui.colored_label(SUBDUED_COLOR, path);
+            ui.colored_label(subdued_color(), path);
             ui.separator();
             ui.horizontal(|ui| {
                 if ui.button("Убрать из поиска").clicked() {
@@ -332,7 +332,7 @@ pub fn show_remove_source_dialog(
         .show(ctx, |ui| {
             ui.spacing_mut().item_spacing.y = 8.0;
             ui.colored_label(
-                WARNING_COLOR,
+                warning_color(),
                 "Файлы на диске останутся. Из базы поиска будут удалены все записи выбранного источника.",
             );
             ui.separator();

@@ -84,7 +84,7 @@ pub use relocate::{
 pub use search::{
     SearchEngine, SearchError, SearchFilters, SearchItem, SearchRequest, SearchResponse,
 };
-pub use settings::{Settings, WordFormsMode};
+pub use settings::{Settings, Theme, WordFormsMode};
 pub use single::{
     AlreadyRunning, SHOW_MESSAGE_NAME, SingleInstanceGuard, acquire, mutex_name_for_data_dir,
     notify_existing, show_message_id,

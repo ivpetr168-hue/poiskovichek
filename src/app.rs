@@ -33,8 +33,8 @@ use crate::ui::dialogs::{
 use crate::ui::results::{SnippetState, render_results_list};
 use crate::ui::settings_dialog::{SettingsDialogAction, SettingsDialogState, SettingsSaveResult};
 use crate::ui::theme::{
-    ACCENT_COLOR, ERROR_COLOR, SUBDUED_COLOR, WARNING_COLOR, apply_theme, configure_fonts,
-    selectable_choice, theme_title_frame,
+    accent_color, apply_theme, configure_fonts, error_color, selectable_choice, set_theme,
+    subdued_color, theme_title_frame, warning_color,
 };
 use crate::ui::wizard::{WizardAction, WizardState};
 use crate::ui::{SORT_MODES, sort_mode_title};
@@ -382,7 +382,7 @@ pub struct PoiskovichekApp {
 
     // Перенос данных
     pub is_relocating: bool,
-    pub relocate_rx: Option<Receiver<Result<PathBuf, String>>>,
+    pub relocate_rx: Option<Receiver<Result<(PathBuf, Settings), String>>>,
     pub relocate_progress: Option<String>,
 
     // Выгрузка отчетов
@@ -1109,12 +1109,11 @@ impl PoiskovichekApp {
         self.relocate_rx = Some(rx);
         self.is_relocating = true;
         self.relocate_progress = Some("Перенос папки данных…".to_string());
-        self.settings = new_settings;
         let ctx_holder = self.egui_ctx.clone();
 
         std::thread::spawn(move || {
             let res = crate::relocate::relocate_data(&old_data_dir, &new_data_dir, mode);
-            let _ = tx.send(res.map(|_| new_data_dir).map_err(|e| e.to_string()));
+            let _ = tx.send(res.map(|_| (new_data_dir, new_settings)).map_err(|e| e.to_string()));
             if let Some(ctx) = ctx_holder.get() {
                 ctx.request_repaint();
             }
@@ -1124,9 +1123,18 @@ impl PoiskovichekApp {
     /// Завершение переноса папки данных: сохраняет настройки и открывает поисковый движок
     /// в новой папке в фоновом потоке (на большой базе построение имён занимает заметное время,
     /// окно в это время не замирает). Результат подхватывает `poll_incoming`.
-    pub fn finish_relocate(&mut self, new_data_dir: PathBuf) {
-        self.settings.data_dir = new_data_dir;
-        let _ = self.settings.save(&self.paths.settings_file);
+    pub fn finish_relocate(&mut self, new_data_dir: PathBuf, mut new_settings: Settings) {
+        new_settings.data_dir = new_data_dir;
+        if let Err(e) = new_settings.save(&self.paths.settings_file) {
+            journal::error("settings", &format!("Не удалось сохранить настройки: {e}"));
+            new_settings.theme = self.settings.theme;
+        }
+        if let Some(ctx) = self.egui_ctx.get() {
+            apply_theme(ctx, new_settings.theme);
+        } else {
+            set_theme(new_settings.theme);
+        }
+        self.settings = new_settings;
         self.relocate_rx = None;
         self.relocate_progress = Some("Открываю базу в новой папке…".to_string());
 
@@ -1281,6 +1289,15 @@ impl PoiskovichekApp {
         // 3. Сохранение настроек в файл
         if let Err(e) = new_settings.save(&settings_file) {
             journal::error("settings", &format!("Не удалось сохранить настройки: {e}"));
+        }
+
+        // Обновление темы оформления
+        if new_settings.theme != old_settings.theme {
+            if let Some(ctx) = self.egui_ctx.get() {
+                apply_theme(ctx, new_settings.theme);
+            } else {
+                set_theme(new_settings.theme);
+            }
         }
 
         // 4. Проверяем изменение правил индексации
@@ -1614,8 +1631,8 @@ impl PoiskovichekApp {
         }
         if let Some(res) = relocate_res {
             match res {
-                Ok(new_data_dir) => {
-                    self.finish_relocate(new_data_dir);
+                Ok((new_data_dir, new_settings)) => {
+                    self.finish_relocate(new_data_dir, new_settings);
                     ctx.request_repaint();
                 }
                 Err(e) => {
@@ -1713,9 +1730,9 @@ impl PoiskovichekApp {
 
         for (idx, src) in p.sources.iter().enumerate() {
             let color = if src.finished {
-                SUBDUED_COLOR
+                subdued_color()
             } else if Some(idx) == current_idx {
-                ACCENT_COLOR
+                accent_color()
             } else {
                 ui.style().visuals.text_color()
             };
@@ -1779,7 +1796,7 @@ impl PoiskovichekApp {
                 // Операция без обхода источников (например, перестройка из сохранённых текстов):
                 // вместо скорости чтения показываем, сколько записей уже обработано
                 ui.colored_label(
-                    ACCENT_COLOR,
+                    accent_color(),
                     format!(
                         "Этап: {} — обработано {}",
                         p.phase,
@@ -1787,7 +1804,7 @@ impl PoiskovichekApp {
                     ),
                 );
             } else {
-                ui.colored_label(ACCENT_COLOR, format!("Этап: {}", p.phase));
+                ui.colored_label(accent_color(), format!("Этап: {}", p.phase));
                 ui.label(format!(
                     "{} МБ/с · {} файлов/с",
                     format_decimal(p.bytes_per_sec as f64 / 1_048_576.0),
@@ -1795,7 +1812,7 @@ impl PoiskovichekApp {
                 ));
             }
             if !p.current_dir.is_empty() {
-                ui.colored_label(SUBDUED_COLOR, shorten_path_middle(&p.current_dir, 70));
+                ui.colored_label(subdued_color(), shorten_path_middle(&p.current_dir, 70));
             }
         });
     }
@@ -1976,8 +1993,434 @@ impl PoiskovichekApp {
     }
 }
 
+// ============================================================================
+// Диагностика вертикальной синхронизации и измерение вывода кадров
+// ============================================================================
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct FrameTimingRecord {
+    pub frame_nr: usize,
+    pub swap_wait_ms: f64,
+    pub present_interval_ms: f64,
+    pub next_frame_start_ms: f64,
+    pub frame_start_interval_ms: f64,
+    pub cpu_update_ms: f64,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct DiagReport {
+    pub vsync_enabled: bool,
+    pub total_frames: usize,
+    pub total_time_ms: f64,
+    pub avg_swap_wait_ms: f64,
+    pub max_swap_wait_ms: f64,
+    pub avg_present_interval_ms: f64,
+    pub min_present_interval_ms: f64,
+    pub max_present_interval_ms: f64,
+    pub std_dev_present_interval_ms: f64,
+    pub hitches_gt_20ms: usize,
+    pub hitches_gt_30ms: usize,
+    pub hitches_gt_45ms: usize,
+    pub avg_next_frame_start_ms: f64,
+    pub avg_cpu_update_ms: f64,
+    pub records: Vec<FrameTimingRecord>,
+}
+
+struct DiagCollector {
+    vsync_enabled: bool,
+    target_frames: usize,
+    log_path: PathBuf,
+    mouse_hz: Option<u32>,
+    async_mouse_started: bool,
+    async_mouse_running: Arc<AtomicBool>,
+    start_time: Instant,
+    last_swap_end: Option<Instant>,
+    last_frame_start: Option<Instant>,
+    current_swap_wait_ms: f64,
+    current_present_interval_ms: f64,
+    records: Vec<FrameTimingRecord>,
+}
+
+static DIAG_COLLECTOR: std::sync::Mutex<Option<DiagCollector>> = std::sync::Mutex::new(None);
+
+#[cfg(windows)]
+static mut ORIGINAL_SWAP_BUFFERS: Option<unsafe extern "system" fn(*mut std::ffi::c_void) -> i32> =
+    None;
+
+#[cfg(windows)]
+unsafe extern "system" fn diag_hooked_swap_buffers(hdc: *mut std::ffi::c_void) -> i32 {
+    let t_before = Instant::now();
+    let res = unsafe {
+        if let Some(orig) = ORIGINAL_SWAP_BUFFERS {
+            orig(hdc)
+        } else {
+            1
+        }
+    };
+    let t_after = Instant::now();
+
+    if let Ok(mut lock) = DIAG_COLLECTOR.lock() {
+        if let Some(col) = lock.as_mut() {
+            let wait_ms = (t_after - t_before).as_secs_f64() * 1000.0;
+            let present_interval = if let Some(prev) = col.last_swap_end {
+                (t_after - prev).as_secs_f64() * 1000.0
+            } else {
+                0.0
+            };
+            col.last_swap_end = Some(t_after);
+            col.current_swap_wait_ms = wait_ms;
+            col.current_present_interval_ms = present_interval;
+        }
+    }
+
+    res
+}
+
+#[cfg(windows)]
+unsafe fn install_swap_hook() -> bool {
+    unsafe extern "system" {
+        fn GetModuleHandleW(name: *const u16) -> *mut std::ffi::c_void;
+        fn VirtualProtect(
+            addr: *const std::ffi::c_void,
+            size: usize,
+            new_prot: u32,
+            old_prot: *mut u32,
+        ) -> i32;
+    }
+
+    let base = unsafe { GetModuleHandleW(std::ptr::null()) } as usize;
+    if base == 0 {
+        return false;
+    }
+    let dos = base as *const u8;
+    if unsafe { *dos != b'M' || *dos.add(1) != b'Z' } {
+        return false;
+    }
+    let e_lfanew = unsafe { *(dos.add(0x3C) as *const i32) } as usize;
+    let nt = unsafe { dos.add(e_lfanew) };
+    let magic = unsafe { *(nt.add(24) as *const u16) };
+    if magic != 0x20B {
+        return false;
+    }
+    let import_dir_rva = unsafe { *(nt.add(144) as *const u32) } as usize;
+    if import_dir_rva == 0 {
+        return false;
+    }
+    let mut desc = unsafe { dos.add(import_dir_rva) } as *const u32;
+    while unsafe { *desc.add(3) != 0 || *desc.add(4) != 0 } {
+        let name_rva = unsafe { *desc.add(3) } as usize;
+        let first_thunk_rva = unsafe { *desc.add(4) } as usize;
+        let orig_thunk_rva = unsafe { *desc } as usize;
+        let thunk_rva = if orig_thunk_rva != 0 {
+            orig_thunk_rva
+        } else {
+            first_thunk_rva
+        };
+
+        let name_ptr = unsafe { dos.add(name_rva) };
+        let mut dll_name = Vec::new();
+        let mut i = 0;
+        while unsafe { *name_ptr.add(i) } != 0 {
+            dll_name.push(unsafe { *name_ptr.add(i) });
+            i += 1;
+        }
+        if let Ok(name_str) = std::str::from_utf8(&dll_name) {
+            if name_str.eq_ignore_ascii_case("gdi32.dll") {
+                let mut int_ptr = unsafe { dos.add(thunk_rva) } as *const usize;
+                let mut iat_ptr = unsafe { dos.add(first_thunk_rva) } as *mut usize;
+                while unsafe { *int_ptr } != 0 {
+                    let val = unsafe { *int_ptr };
+                    if (val & (1usize << 63)) == 0 {
+                        let hint_name_ptr = unsafe { dos.add(val) };
+                        let fn_name_ptr = unsafe { hint_name_ptr.add(2) };
+                        let mut fn_name = Vec::new();
+                        let mut j = 0;
+                        while unsafe { *fn_name_ptr.add(j) } != 0 {
+                            fn_name.push(unsafe { *fn_name_ptr.add(j) });
+                            j += 1;
+                        }
+                        if fn_name == b"SwapBuffers" {
+                            let original = unsafe { *iat_ptr };
+                            let mut old_protect = 0u32;
+                            if unsafe {
+                                VirtualProtect(
+                                    iat_ptr as *const _,
+                                    std::mem::size_of::<usize>(),
+                                    0x04,
+                                    &mut old_protect,
+                                )
+                            } != 0
+                            {
+                                unsafe {
+                                    *iat_ptr = diag_hooked_swap_buffers as *const () as usize;
+                                    let _ = VirtualProtect(
+                                        iat_ptr as *const _,
+                                        std::mem::size_of::<usize>(),
+                                        old_protect,
+                                        &mut old_protect,
+                                    );
+                                    ORIGINAL_SWAP_BUFFERS = Some(std::mem::transmute(original));
+                                }
+                                return true;
+                            }
+                        }
+                    }
+                    int_ptr = unsafe { int_ptr.add(1) };
+                    iat_ptr = unsafe { iat_ptr.add(1) };
+                }
+            }
+        }
+        desc = unsafe { desc.add(5) };
+    }
+    false
+}
+
+fn diag_is_active() -> bool {
+    std::env::args().any(|a| a == "--diag-frames")
+        || std::env::var("POISKOVICHEK_DIAG_FRAMES").is_ok()
+}
+
+fn diag_init(vsync_enabled: bool) {
+    let target_frames = std::env::args()
+        .position(|a| a == "--diag-frames")
+        .and_then(|p| std::env::args().nth(p + 1))
+        .and_then(|s| s.parse::<usize>().ok())
+        .or_else(|| {
+            std::env::var("POISKOVICHEK_DIAG_FRAMES")
+                .ok()
+                .and_then(|s| s.parse::<usize>().ok())
+        })
+        .unwrap_or(300);
+
+    let log_path = std::env::args()
+        .position(|a| a == "--diag-log")
+        .and_then(|p| std::env::args().nth(p + 1))
+        .map(PathBuf::from)
+        .or_else(|| std::env::var("POISKOVICHEK_DIAG_LOG").ok().map(PathBuf::from))
+        .unwrap_or_else(|| PathBuf::from("diag_results.json"));
+
+    let mouse_hz = std::env::args()
+        .position(|a| a == "--diag-mouse-hz")
+        .and_then(|p| std::env::args().nth(p + 1))
+        .and_then(|s| s.parse::<u32>().ok())
+        .or_else(|| {
+            std::env::var("POISKOVICHEK_DIAG_MOUSE_HZ")
+                .ok()
+                .and_then(|s| s.parse::<u32>().ok())
+        });
+
+    let col = DiagCollector {
+        vsync_enabled,
+        target_frames,
+        log_path,
+        mouse_hz,
+        async_mouse_started: false,
+        async_mouse_running: Arc::new(AtomicBool::new(true)),
+        start_time: Instant::now(),
+        last_swap_end: None,
+        last_frame_start: None,
+        current_swap_wait_ms: 0.0,
+        current_present_interval_ms: 0.0,
+        records: Vec::with_capacity(target_frames + 10),
+    };
+    *DIAG_COLLECTOR.lock().unwrap() = Some(col);
+}
+
+fn diag_on_ui_start(ui: &mut egui::Ui, t_ui_start: Instant) {
+    let mut should_exit = false;
+    let mut exit_log_path = PathBuf::new();
+    let mut exit_report = None;
+
+    if let Ok(mut lock) = DIAG_COLLECTOR.lock() {
+        if let Some(col) = lock.as_mut() {
+            let next_start = if let Some(last_swap) = col.last_swap_end {
+                (t_ui_start - last_swap).as_secs_f64() * 1000.0
+            } else {
+                0.0
+            };
+            let start_interval = if let Some(last_start) = col.last_frame_start {
+                (t_ui_start - last_start).as_secs_f64() * 1000.0
+            } else {
+                0.0
+            };
+            col.last_frame_start = Some(t_ui_start);
+
+            let rec = FrameTimingRecord {
+                frame_nr: col.records.len() + 1,
+                swap_wait_ms: col.current_swap_wait_ms,
+                present_interval_ms: col.current_present_interval_ms,
+                next_frame_start_ms: next_start,
+                frame_start_interval_ms: start_interval,
+                cpu_update_ms: 0.0,
+            };
+            col.records.push(rec);
+
+            // Траектория мыши строго внутри окна программы (1100x780)
+            if let Some(hz) = col.mouse_hz {
+                if !col.async_mouse_started {
+                    col.async_mouse_started = true;
+                    let running = Arc::clone(&col.async_mouse_running);
+                    let ctx = ui.ctx().clone();
+                    let start = col.start_time;
+                    let interval = std::time::Duration::from_secs_f64(1.0 / (hz as f64).max(1.0));
+                    std::thread::spawn(move || {
+                        while running.load(Ordering::Relaxed) {
+                            let t = start.elapsed().as_secs_f64();
+                            let period = 2.0;
+                            let phase = (t % period) / period;
+                            let angle = phase * 2.0 * std::f64::consts::PI;
+                            let x = 550.0 + 350.0 * angle.sin();
+                            let y = 390.0 + 200.0 * angle.cos();
+                            let pos = egui::pos2(x as f32, y as f32);
+
+                            ctx.input_mut(|i| {
+                                i.events.push(egui::Event::PointerMoved(pos));
+                            });
+                            ctx.request_repaint();
+                            std::thread::sleep(interval);
+                        }
+                    });
+                }
+            } else {
+                let t = col.start_time.elapsed().as_secs_f64();
+                let period = 2.0;
+                let phase = (t % period) / period;
+                let angle = phase * 2.0 * std::f64::consts::PI;
+                let x = 550.0 + 350.0 * angle.sin();
+                let y = 390.0 + 200.0 * angle.cos();
+                let pos = egui::pos2(x as f32, y as f32);
+
+                ui.ctx().input_mut(|i| {
+                    i.events.push(egui::Event::PointerMoved(pos));
+                });
+                ui.ctx().request_repaint();
+            }
+
+            if col.records.len() >= col.target_frames {
+                should_exit = true;
+                col.async_mouse_running.store(false, Ordering::Relaxed);
+                exit_log_path = col.log_path.clone();
+
+                let total = col.records.len();
+                let valid_records = if total > 5 {
+                    &col.records[5..]
+                } else {
+                    &col.records[..]
+                };
+                let count = valid_records.len() as f64;
+
+                let sum_swap: f64 = valid_records.iter().map(|r| r.swap_wait_ms).sum();
+                let max_swap: f64 = valid_records
+                    .iter()
+                    .map(|r| r.swap_wait_ms)
+                    .fold(0.0, f64::max);
+
+                let sum_present: f64 = valid_records.iter().map(|r| r.present_interval_ms).sum();
+                let min_present: f64 = valid_records
+                    .iter()
+                    .map(|r| r.present_interval_ms)
+                    .fold(f64::MAX, f64::min);
+                let max_present: f64 = valid_records
+                    .iter()
+                    .map(|r| r.present_interval_ms)
+                    .fold(0.0, f64::max);
+
+                let avg_present = if count > 0.0 {
+                    sum_present / count
+                } else {
+                    0.0
+                };
+                let variance: f64 = if count > 1.0 {
+                    valid_records
+                        .iter()
+                        .map(|r| (r.present_interval_ms - avg_present).powi(2))
+                        .sum::<f64>()
+                        / (count - 1.0)
+                } else {
+                    0.0
+                };
+                let std_dev = variance.sqrt();
+
+                let hitches_20 = valid_records
+                    .iter()
+                    .filter(|r| r.present_interval_ms > 20.0)
+                    .count();
+                let hitches_30 = valid_records
+                    .iter()
+                    .filter(|r| r.present_interval_ms > 30.0)
+                    .count();
+                let hitches_45 = valid_records
+                    .iter()
+                    .filter(|r| r.present_interval_ms > 45.0)
+                    .count();
+
+                let sum_next: f64 = valid_records.iter().map(|r| r.next_frame_start_ms).sum();
+                let sum_cpu: f64 = valid_records.iter().map(|r| r.cpu_update_ms).sum();
+
+                let report = DiagReport {
+                    vsync_enabled: col.vsync_enabled,
+                    total_frames: total,
+                    total_time_ms: col.start_time.elapsed().as_secs_f64() * 1000.0,
+                    avg_swap_wait_ms: if count > 0.0 {
+                        sum_swap / count
+                    } else {
+                        0.0
+                    },
+                    max_swap_wait_ms: max_swap,
+                    avg_present_interval_ms: avg_present,
+                    min_present_interval_ms: if min_present == f64::MAX {
+                        0.0
+                    } else {
+                        min_present
+                    },
+                    max_present_interval_ms: max_present,
+                    std_dev_present_interval_ms: std_dev,
+                    hitches_gt_20ms: hitches_20,
+                    hitches_gt_30ms: hitches_30,
+                    hitches_gt_45ms: hitches_45,
+                    avg_next_frame_start_ms: if count > 0.0 {
+                        sum_next / count
+                    } else {
+                        0.0
+                    },
+                    avg_cpu_update_ms: if count > 0.0 { sum_cpu / count } else { 0.0 },
+                    records: col.records.clone(),
+                };
+                exit_report = Some(report);
+            }
+        }
+    }
+
+    if should_exit {
+        if let Some(rep) = exit_report {
+            eprintln!(
+                "[DIAG SUMMARY] VSync: {}, Frames: {}, AvgPresent: {:.2}ms, StdDev: {:.2}ms, Hitches(>20ms): {}, Hitches(>30ms): {}, Hitches(>45ms): {}, AvgSwapWait: {:.2}ms, AvgCpu: {:.2}ms",
+                rep.vsync_enabled, rep.total_frames, rep.avg_present_interval_ms, rep.std_dev_present_interval_ms,
+                rep.hitches_gt_20ms, rep.hitches_gt_30ms, rep.hitches_gt_45ms,
+                rep.avg_swap_wait_ms, rep.avg_cpu_update_ms
+            );
+            if let Ok(json) = serde_json::to_string_pretty(&rep) {
+                let _ = std::fs::write(&exit_log_path, json);
+            }
+        }
+        std::process::exit(0);
+    }
+}
+
+fn diag_on_ui_end(t_ui_start: Instant) {
+    if let Ok(mut lock) = DIAG_COLLECTOR.lock() {
+        if let Some(col) = lock.as_mut() {
+            if let Some(last) = col.records.last_mut() {
+                last.cpu_update_ms = t_ui_start.elapsed().as_secs_f64() * 1000.0;
+            }
+        }
+    }
+}
+
 impl eframe::App for PoiskovichekApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        let t_ui_start = std::time::Instant::now();
+        diag_on_ui_start(ui, t_ui_start);
         let ctx = ui.ctx().clone();
         let _ = self.egui_ctx.set(ctx.clone());
         self.poll_incoming(&ctx);
@@ -2116,7 +2559,7 @@ impl eframe::App for PoiskovichekApp {
                         otmenit_skachivanie = true;
                     }
                     ui.colored_label(
-                        ACCENT_COLOR,
+                        accent_color(),
                         format!(
                             "Скачиваю обновление: {} из {} МБ",
                             format_decimal(gotovo as f64 / 1_048_576.0),
@@ -2133,7 +2576,7 @@ impl eframe::App for PoiskovichekApp {
                         pozzhe = true;
                     }
                     ui.colored_label(
-                        ACCENT_COLOR,
+                        accent_color(),
                         format!(
                             "Вышла версия {} (у вас {})",
                             op.version,
@@ -2152,7 +2595,7 @@ impl eframe::App for PoiskovichekApp {
                         {
                             token.cancel();
                         }
-                        ui.colored_label(ACCENT_COLOR, self.operation_title.as_str());
+                        ui.colored_label(accent_color(), self.operation_title.as_str());
                     });
                 }
             } else {
@@ -2164,17 +2607,17 @@ impl eframe::App for PoiskovichekApp {
                             c.cancel();
                         }
                         if let Some(ref p) = self.duplicates_progress {
-                            ui.colored_label(ACCENT_COLOR, duplicates_progress_text(p));
+                            ui.colored_label(accent_color(), duplicates_progress_text(p));
                         } else {
-                            ui.colored_label(ACCENT_COLOR, "Поиск дубликатов…");
+                            ui.colored_label(accent_color(), "Поиск дубликатов…");
                         }
                     } else {
                         let (text, kind) = self.status_line();
                         let color = match kind {
-                            StatusKind::Info => ACCENT_COLOR,
-                            StatusKind::Warning => WARNING_COLOR,
-                            StatusKind::Error => ERROR_COLOR,
-                            StatusKind::Muted => SUBDUED_COLOR,
+                            StatusKind::Info => accent_color(),
+                            StatusKind::Warning => warning_color(),
+                            StatusKind::Error => error_color(),
+                            StatusKind::Muted => subdued_color(),
                         };
                         ui.colored_label(color, text);
                     }
@@ -2256,13 +2699,13 @@ impl eframe::App for PoiskovichekApp {
             // 2. Предупреждения поиска
             if let Some(ref resp) = self.search_response {
                 for w in &resp.warnings {
-                    ui.colored_label(WARNING_COLOR, w);
+                    ui.colored_label(warning_color(), w);
                 }
             }
 
             // 2а. Режимы поиска: словоформы и несколько слов
             ui.horizontal_wrapped(|ui| {
-                ui.colored_label(SUBDUED_COLOR, "Слова:");
+                ui.colored_label(subdued_color(), "Слова:");
                 let mut forms = self.word_forms_mode;
                 selectable_choice(ui, &mut forms, WordFormsMode::AllForms, "все формы")
                     .on_hover_text(
@@ -2279,7 +2722,7 @@ impl eframe::App for PoiskovichekApp {
 
                 ui.separator();
 
-                ui.colored_label(SUBDUED_COLOR, "Несколько слов:");
+                ui.colored_label(subdued_color(), "Несколько слов:");
                 let mut multi = self.multi_word_mode;
                 selectable_choice(ui, &mut multi, MultiWordMode::StrictPhrase, "фраза подряд")
                     .on_hover_text(
@@ -2438,12 +2881,12 @@ impl eframe::App for PoiskovichekApp {
             // 4. Сводка «Найдено: N. Показано: M. K мс»
             ui.horizontal(|ui| {
                 if self.is_searching {
-                    ui.colored_label(ACCENT_COLOR, "Идёт поиск…");
+                    ui.colored_label(accent_color(), "Идёт поиск…");
                 } else if let Some(ref err) = self.search_error {
-                    ui.colored_label(ERROR_COLOR, err);
+                    ui.colored_label(error_color(), err);
                 } else if let Some(ref resp) = self.search_response {
                     ui.colored_label(
-                        SUBDUED_COLOR,
+                        subdued_color(),
                         Self::format_status_summary(
                             resp.total,
                             resp.items.len(),
@@ -2452,9 +2895,9 @@ impl eframe::App for PoiskovichekApp {
                     );
                 } else if self.query_text.trim().is_empty() && self.filters.is_empty() {
                     if self.settings.sources.is_empty() {
-                        ui.colored_label(WARNING_COLOR, "Добавьте диск или папку: меню «Действия»");
+                        ui.colored_label(warning_color(), "Добавьте диск или папку: меню «Действия»");
                     } else {
-                        ui.colored_label(SUBDUED_COLOR, "Введите слова или фразу");
+                        ui.colored_label(subdued_color(), "Введите слова или фразу");
                     }
                 }
             });
@@ -2466,7 +2909,7 @@ impl eframe::App for PoiskovichekApp {
                 ui.add_space(20.0);
                 ui.vertical_centered(|ui| {
                     ui.colored_label(
-                        WARNING_COLOR,
+                        warning_color(),
                         egui::RichText::new("Добавьте диск или папку: меню «Действия»").size(15.0),
                     );
                 });
@@ -2550,7 +2993,7 @@ impl eframe::App for PoiskovichekApp {
                 .show(&ctx, |ui| {
                     ui.spacing_mut().item_spacing.y = 8.0;
                     ui.colored_label(
-                        ACCENT_COLOR,
+                        accent_color(),
                         format!("Готово: перечень сохранён в {}", dir.display()),
                     );
                     ui.separator();
@@ -2581,7 +3024,7 @@ impl eframe::App for PoiskovichekApp {
                 .show(&ctx, |ui| {
                     ui.spacing_mut().item_spacing.y = 10.0;
                     ui.colored_label(
-                        WARNING_COLOR,
+                        warning_color(),
                         "Настройки источников или правил извлечения изменились. Найти изменения и обновить поиск сейчас?",
                     );
                     ui.separator();
@@ -2665,6 +3108,7 @@ impl eframe::App for PoiskovichekApp {
 
         // Проверка готовности снимка для режима --snimok
         self.check_snimok_capture(&ctx);
+        diag_on_ui_end(t_ui_start);
     }
 }
 
@@ -2748,7 +3192,7 @@ fn load_app_icon() -> Option<egui::IconData> {
     })
 }
 
-/// Запуск GUI приложения с fallback: wgpu -> glow -> MessageBoxW
+/// Запуск GUI приложения с fallback: glow -> wgpu -> MessageBoxW
 pub fn run_gui_app(
     paths: AppPaths,
     settings: Settings,
@@ -2779,9 +3223,33 @@ pub fn run_gui_app(
         viewport = viewport.with_icon(std::sync::Arc::new(icon));
     }
 
+    // Диагностический переключатель вертикальной синхронизации OpenGL:
+    // По умолчанию vsync: false (узкая правка устранения рывков при движении мыши в Glow, аналогично AutoNoVsync в WGPU)
+    let opengl_vsync = {
+        let env_val = std::env::var("POISKOVICHEK_OPENGL_VSYNC").ok();
+        let arg_val = std::env::args()
+            .position(|a| a == "--opengl-vsync")
+            .and_then(|p| std::env::args().nth(p + 1));
+        match arg_val.as_deref().or(env_val.as_deref()) {
+            Some("on") | Some("true") | Some("1") => true,
+            _ => false,
+        }
+    };
+
+    #[cfg(windows)]
+    if diag_is_active() {
+        diag_init(opengl_vsync);
+        let hooked = unsafe { install_swap_hook() };
+        eprintln!("[DIAG] SwapBuffers hook installed: {hooked}, VSync: {opengl_vsync}");
+    }
+
     let mut native_options = eframe::NativeOptions {
         viewport,
-        renderer: eframe::Renderer::Wgpu,
+        renderer: eframe::Renderer::Glow,
+        glow_options: eframe::egui_glow::GlowConfiguration {
+            vsync: opengl_vsync,
+            ..Default::default()
+        },
         wgpu_options: eframe::egui_wgpu::WgpuConfiguration {
             surface: eframe::egui_wgpu::SurfaceConfig {
                 present_mode: eframe::egui_wgpu::wgpu::PresentMode::AutoNoVsync,
@@ -2797,14 +3265,14 @@ pub fn run_gui_app(
     let engine_clone = engine.clone();
     let snimok_clone = snimok_options.clone();
 
-    // 1. Попытка запустить с WGPU
-    let res_wgpu = eframe::run_native(
+    // 1. Попытка запустить с Glow
+    let res_glow = eframe::run_native(
         app_title,
         native_options.clone(),
         Box::new(move |cc| {
-            journal::info("ui", "рендерер: wgpu");
+            journal::info("ui", "рендерер: glow");
             configure_fonts(&cc.egui_ctx);
-            apply_theme(&cc.egui_ctx);
+            apply_theme(&cc.egui_ctx, settings_clone.theme);
             let app = PoiskovichekApp::new(
                 paths_clone,
                 settings_clone,
@@ -2817,32 +3285,32 @@ pub fn run_gui_app(
         }),
     );
 
-    if let Err(err_wgpu) = res_wgpu {
+    if let Err(err_glow) = res_glow {
         journal::error(
             "ui",
-            &format!("Не удалось поднять отрисовку wgpu: {err_wgpu}. Пробуем glow…"),
+            &format!("Не удалось поднять отрисовку glow: {err_glow}. Пробуем wgpu…"),
         );
 
-        // 2. Попытка запустить с Glow
-        native_options.renderer = eframe::Renderer::Glow;
+        // 2. Попытка запустить с WGPU
+        native_options.renderer = eframe::Renderer::Wgpu;
 
-        let paths_glow = paths.clone();
-        let settings_glow = settings.clone();
-        let engine_glow = engine.clone();
-        let snimok_glow = snimok_options.clone();
+        let paths_wgpu = paths.clone();
+        let settings_wgpu = settings.clone();
+        let engine_wgpu = engine.clone();
+        let snimok_wgpu = snimok_options.clone();
 
-        let res_glow = eframe::run_native(
+        let res_wgpu = eframe::run_native(
             app_title,
             native_options,
             Box::new(move |cc| {
-                journal::info("ui", "рендерер: glow");
+                journal::info("ui", "рендерер: wgpu");
                 configure_fonts(&cc.egui_ctx);
-                apply_theme(&cc.egui_ctx);
+                apply_theme(&cc.egui_ctx, settings_wgpu.theme);
                 let app = PoiskovichekApp::new(
-                    paths_glow,
-                    settings_glow,
-                    engine_glow,
-                    snimok_glow,
+                    paths_wgpu,
+                    settings_wgpu,
+                    engine_wgpu,
+                    snimok_wgpu,
                     Some(cc.egui_ctx.clone()),
                 );
                 app.start_update_checker();
@@ -2850,10 +3318,10 @@ pub fn run_gui_app(
             }),
         );
 
-        if let Err(err_glow) = res_glow {
+        if let Err(err_wgpu) = res_wgpu {
             // 3. Запись в журнал и Win32 MessageBoxW
             let err_msg = format!(
-                "Не удалось запустить графический интерфейс ПоисКовичеКа.\n\nОшибка wgpu: {err_wgpu}\nОшибка glow: {err_glow}"
+                "Не удалось запустить графический интерфейс ПоисКовичеКа.\n\nОшибка glow: {err_glow}\nОшибка wgpu: {err_wgpu}"
             );
             journal::error("ui", &err_msg);
 

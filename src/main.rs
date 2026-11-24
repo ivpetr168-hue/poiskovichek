@@ -279,6 +279,10 @@ fn main() {
         println!("  --zapros <текст>              Поисковый запрос для режима снимка");
         println!("  --okno <поиск|o-programme|..> Целевое окно для режима снимка");
         println!("  --background                  Запуск в фоновом режиме (окно свёрнуто)");
+        println!("  --data-dir <папка>            Переопределить папку данных программы");
+        println!("  --opengl-vsync <on|off>       Диагностика: вертикальная синхронизация OpenGL");
+        println!("  --diag-frames <N>             Диагностика: число кадров замера и выход");
+        println!("  --diag-log <файл.json>        Диагностика: путь сохранения отчёта замера");
         println!("  --version, -V                 Показать версию программы и выйти");
         println!("  --help, -h                    Показать это справочное сообщение и выйти");
         process::exit(0);
@@ -338,7 +342,7 @@ fn main() {
     let settings_file = paths::default_settings_path(&exe_dir);
 
     // Загрузка настроек
-    let settings = match Settings::load(&settings_file) {
+    let mut settings = match Settings::load(&settings_file) {
         Ok(s) => s,
         Err(err) => {
             let fallback_paths = paths::resolve(&exe_dir, &Settings::default());
@@ -351,6 +355,12 @@ fn main() {
             process::exit(2);
         }
     };
+
+    if let Some(pos) = args.iter().position(|arg| arg == "--data-dir") {
+        if let Some(dir) = args.get(pos + 1) {
+            settings.data_dir = PathBuf::from(dir);
+        }
+    }
 
     // Разрешение путей и подготовка папок
     let app_paths = paths::resolve(&exe_dir, &settings);

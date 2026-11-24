@@ -1179,3 +1179,63 @@ fn test_word_forms_mode_default_for_old_settings_and_roundtrip() {
         WordFormsMode::Exact
     );
 }
+
+// Выбор темы интерфейса: чтение старых настроек без темы и сохранение/загрузка вариантов темы
+#[test]
+fn test_theme_default_for_old_settings_and_roundtrip() {
+    use poiskovichek::settings::Theme;
+
+    // Старый файл без поля темы: должно выбираться Theme::Dark
+    let old = Settings::from_toml_str("max_results = 77\nmulti_word_mode = \"AllWords\"\n")
+        .expect("старый файл настроек без темы читается");
+    assert_eq!(old.theme, Theme::Dark);
+    assert_eq!(Settings::default().theme, Theme::Dark);
+
+    // Чтение всех вариантов темы по имени и русским псевдонимам
+    assert_eq!(
+        Settings::from_toml_str("theme = \"Dark\"").unwrap().theme,
+        Theme::Dark
+    );
+    assert_eq!(
+        Settings::from_toml_str("theme = \"Light\"").unwrap().theme,
+        Theme::Light
+    );
+    assert_eq!(
+        Settings::from_toml_str("theme = \"Blue\"").unwrap().theme,
+        Theme::Blue
+    );
+    assert_eq!(
+        Settings::from_toml_str("theme = \"Brown\"").unwrap().theme,
+        Theme::Brown
+    );
+    assert_eq!(
+        Settings::from_toml_str("theme = \"тёмная\"").unwrap().theme,
+        Theme::Dark
+    );
+    assert_eq!(
+        Settings::from_toml_str("theme = \"светлая\"").unwrap().theme,
+        Theme::Light
+    );
+    assert_eq!(
+        Settings::from_toml_str("theme = \"синяя\"").unwrap().theme,
+        Theme::Blue
+    );
+    assert_eq!(
+        Settings::from_toml_str("theme = \"коричневая\"").unwrap().theme,
+        Theme::Brown
+    );
+
+    // Сохранение и чтение обратно
+    let dir = tempdir().unwrap();
+    let file = dir.path().join("settings.toml");
+    let mut s = Settings::default();
+    s.theme = Theme::Light;
+    s.save(&file).unwrap();
+    assert_eq!(
+        Settings::load(&file).unwrap().theme,
+        Theme::Light
+    );
+
+    let text = fs::read_to_string(&file).unwrap();
+    assert!(text.contains("theme = \"Light\""), "{text}");
+}

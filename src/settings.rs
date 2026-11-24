@@ -94,6 +94,35 @@ pub enum SortMode {
     NameAsc,
 }
 
+/// Тема оформления интерфейса.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum Theme {
+    /// «Тёмная» — существующее оформление и значение по умолчанию.
+    #[serde(alias = "dark", alias = "Dark", alias = "тёмная", alias = "темная", alias = "Тёмная", alias = "Темная")]
+    #[default]
+    Dark,
+    /// «Светлая» — полноценный светлый фон.
+    #[serde(alias = "light", alias = "Light", alias = "светлая", alias = "Светлая")]
+    Light,
+    /// «Синяя» — тёмно-синяя основа.
+    #[serde(alias = "blue", alias = "Blue", alias = "синяя", alias = "Синяя")]
+    Blue,
+    /// «Коричневая» — тёплая коричневая основа.
+    #[serde(alias = "brown", alias = "Brown", alias = "коричневая", alias = "Коричневая")]
+    Brown,
+}
+
+impl Theme {
+    pub fn title(self) -> &'static str {
+        match self {
+            Self::Dark => "Тёмная",
+            Self::Light => "Светлая",
+            Self::Blue => "Синяя",
+            Self::Brown => "Коричневая",
+        }
+    }
+}
+
 fn default_true() -> bool {
     true
 }
@@ -187,6 +216,9 @@ pub struct Settings {
     pub log_keep_days: u32,
 
     // === Окно и состояние интерфейса ===
+    /// Тема оформления интерфейса.
+    #[serde(default)]
+    pub theme: Theme,
     /// Запомненная ширина окна
     #[serde(default)]
     pub window_width: Option<u32>,
@@ -295,6 +327,7 @@ impl Default for Settings {
             worker_threads: 0,
             hdd_gentle_mode: false,
             log_keep_days: 14,
+            theme: Theme::Dark,
             window_width: None,
             window_height: None,
             window_x: None,

@@ -5,7 +5,7 @@ use crate::settings::{Source, SourceMode};
 use crate::ui::dialogs::pick_folder;
 use crate::ui::source_mode_title;
 use crate::ui::theme::{
-    ACCENT_COLOR, SUBDUED_COLOR, TEXT_COLOR, WARNING_COLOR, selectable_choice, theme_title_frame,
+    accent_color, selectable_choice, subdued_color, text_color, theme_title_frame, warning_color,
 };
 
 /// Элемент диска в мастере первого запуска
@@ -108,7 +108,7 @@ impl WizardState {
 
     fn render_step1(&mut self, ui: &mut egui::Ui) -> WizardAction {
         ui.colored_label(
-            ACCENT_COLOR,
+            accent_color(),
             egui::RichText::new("Шаг 1 из 2: Что искать")
                 .size(16.0)
                 .strong(),
@@ -119,7 +119,7 @@ impl WizardState {
         egui::ScrollArea::vertical()
             .max_height(260.0)
             .show(ui, |ui| {
-                ui.colored_label(TEXT_COLOR, "Диски компьютера:");
+                ui.colored_label(text_color(), "Диски компьютера:");
                 for drive_item in &mut self.drives {
                     ui.horizontal(|ui| {
                         let desc = describe(&drive_item.info);
@@ -157,7 +157,7 @@ impl WizardState {
 
                 if !self.custom_folders.is_empty() {
                     ui.add_space(8.0);
-                    ui.colored_label(TEXT_COLOR, "Дополнительные папки:");
+                    ui.colored_label(text_color(), "Дополнительные папки:");
                     let mut remove_idx = None;
 
                     for (idx, folder) in self.custom_folders.iter_mut().enumerate() {
@@ -237,7 +237,7 @@ impl WizardState {
 
     fn render_step2(&mut self, ui: &mut egui::Ui) -> WizardAction {
         ui.colored_label(
-            ACCENT_COLOR,
+            accent_color(),
             egui::RichText::new("Шаг 2 из 2: Сводка")
                 .size(16.0)
                 .strong(),
@@ -248,7 +248,7 @@ impl WizardState {
         egui::ScrollArea::vertical()
             .max_height(240.0)
             .show(ui, |ui| {
-                ui.colored_label(TEXT_COLOR, "Будет проиндексировано:");
+                ui.colored_label(text_color(), "Будет проиндексировано:");
                 for drive in self.drives.iter().filter(|d| d.selected) {
                     ui.label(format!(
                         "• Диск {}: ({}) — режим «{}»",
@@ -268,12 +268,12 @@ impl WizardState {
 
                 ui.add_space(8.0);
                 ui.colored_label(
-                    SUBDUED_COLOR,
+                    subdued_color(),
                     "Исключения по умолчанию: системные папки Windows, Program Files, AppData, корзина; служебные папки .git, node_modules, target, venv; системные файлы pagefile.sys, hiberfil.sys.",
                 );
                 ui.add_space(4.0);
                 ui.colored_label(
-                    WARNING_COLOR,
+                    warning_color(),
                     "Примечание: время обхода зависит от объёма и типа накопителей; точное время заранее не прогнозируется.",
                 );
             });
